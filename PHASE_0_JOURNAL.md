@@ -115,3 +115,58 @@ Maîtriser les bases de la navigation Linux et sécuriser l'accès à distance v
 2.  Comprendre et manipuler les permissions Linux (`chmod`, `chown`, SUID).
 3.  Automatiser une tâche simple avec un script Bash basique.
 4.  Publier ce journal sur GitHub (Premier commit public).
+
+## 📅 LOG 0.3 : Utilisateurs, Groupes et Exploitation SUID (Approfondi)
+
+### 🎯 Objectif
+Comprendre la gestion des identités Linux (`/etc/passwd`, `/etc/shadow`) et maîtriser le mécanisme d'élévation de privilèges via le bit **SUID** (Set User ID), en distinguant le comportement des scripts interprétés vs les binaires compilés.
+
+### 🔍 Analyse Système & Concepts Clés
+1.  **Séparation des secrets :**
+    *   `/etc/passwd` : Liste les utilisateurs (lisible par tous). Le mot de passe est masqué par un `x`.
+    *   `/etc/shadow` : Contient les hashs des mots de passe (lisible uniquement par `root`).
+    *   *Leçon :* Cette séparation empêche un utilisateur standard de voler les empreintes de mots de passe pour les casser hors ligne.
+
+2.  **Gestion des permissions :**
+    *   Structure : `Owner` / `Group` / `Others`.
+    *   Droits : `r` (Read), `w` (Write), `x` (Execute).
+    *   Commandes : `chmod` (changer les modes), `chown` (changer le propriétaire).
+
+### ️ Lab Pratique : Élévation de Privilèges (Privilege Escalation)
+
+#### Scénario A : Script Bash (Échec attendu sur systèmes modernes)
+*   **Action :** Création d'un script `/tmp/malicious_script.sh` avec `#!/bin/bash`, appartenant à `root` avec le bit SUID (`chmod u+s`).
+*   **Résultat :** L'exécution par l'utilisateur `hacker-trainee` n'a **PAS** donné les droits root. `whoami` retournait toujours `hacker-trainee`.
+*   **Analyse Technique :** Les noyaux Linux modernes (comme celui d'Ubuntu 24.04) ignorent délibérément le bit SUID sur les **scripts interprétés** pour des raisons de sécurité (risque d'injection de variables d'environnement).
+
+#### Scénario B : Binaire Compilé en C (Succès confirmé) ✅
+*   **Action :** Compilation d'un petit programme C (`exploit.c`) utilisant `setuid(0)` et `system("/bin/bash")`.
+    ```c
+    int main(void) { setuid(0); system("/bin/bash"); return 0; }
+    ```
+*   **Configuration :** Attribution à `root` et activation du SUID : `sudo chmod 4755 /tmp/exploit`.
+*   **Exécution :** Lancé par `hacker-trainee`.
+*   **Résultat :** `whoami` affiche **`root`**.
+*   **Conclusion :** Le bit SUID fonctionne parfaitement sur les **binaires compilés**. C'est le vecteur d'attaque classique pour l'élévation de privilèges.
+
+#### Scénario C : Interpréteur Python (Nuance importante)
+*   **Observation :** Un script `.py` direct avec SUID échoue (même raison que le Bash).
+*   **Contournement théorique :** Si l'on rend le binaire de l'interpréteur lui-même SUID (ex: `cp /usr/bin/python3 /tmp/my_python` + `chmod u+s`), alors l'exécution du script via ce binaire (`/tmp/my_python script.py`) permet l'élévation.
+*   **Leçon :** En audit, il faut chercher non seulement les scripts suspects, mais surtout les binaires légitimes (python, vim, find) mal configurés avec le bit SUID.
+
+### ️ Réflexion Sécurité (Thinking like an Attacker & Defender)
+*   **Attaquant :** Cherche systématiquement les fichiers avec le bit `s` (`find / -perm -u=s`). Un binaire éditeur de texte ou un interpréteur avec ce bit est une compromission totale immédiate.
+*   **Défenseur (Blue Team) :**
+    *   Ne jamais mettre le bit SUID sur des scripts.
+    *   Auditer régulièrement les fichiers SUID : `find / -perm -u=s -type f 2>/dev/null`.
+    *   Retirer immédiatement le bit SUID (`chmod u-s`) sur tout fichier non essentiel.
+
+###  Nettoyage du Lab
+Suppression des fichiers dangereux après validation :
+- `sudo rm /tmp/exploit`
+- `sudo rm /tmp/malicious_script.sh`
+- `sudo rm /tmp/test_suid.py`
+- `sudo rm /tmp/my_python`
+
+###  Prochaines Étapes
+Passer à l'analyse des logs (`/var/log/auth.log`) pour détecter ces tentatives d'élévation de privilèges (Mission 0.4).
